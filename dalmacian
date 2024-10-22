@@ -1,0 +1,66 @@
+import cv2 as cv
+import time
+
+# 원하는 FPS 설정
+desired_fps = 20
+frame_delay = 1 / desired_fps  # 각 프레임 간의 시간 간격 계산
+
+# VideoCapture 객체를 생성하여 웹캠 연결 (인자: 0)
+cap = cv.VideoCapture(0)
+
+# 녹화 시 사용할 비디오 코덱과 파일 설정
+fourcc = cv.VideoWriter_fourcc(*'XVID')
+out = None
+recording = False
+
+# 카메라 영상의 해상도 가져오기
+frame_width = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
+frame_height = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
+
+# 메인 루프
+while True:
+    start_time = time.time()  # 프레임 시작 시간 기록
+    
+    ret, frame = cap.read()  # 카메라로부터 프레임 읽기
+    if not ret:
+        break
+
+    # 녹화 중일 때 빨간색 원을 그려서 표시
+    if recording:
+        cv.circle(frame, (50, 50), 20, (0, 0, 255), -1)
+
+    # 화면에 현재 카메라 영상 표시
+    cv.imshow('Video Recorder', frame)
+
+    # 키보드 입력 대기
+    key = cv.waitKey(1)
+
+    # Space 키로 녹화 시작/정지
+    if key == ord(' '):
+        if recording:
+            print("Recording stopped")
+            recording = False
+            out.release()  # 파일 저장 종료
+        else:
+            print("Recording started")
+            recording = True
+            out = cv.VideoWriter('output.avi', fourcc, desired_fps, (frame_width, frame_height))
+
+    # ESC 키로 프로그램 종료
+    elif key == 27:  # ESC 키
+        break
+
+    # 녹화 중이면 비디오 파일로 프레임 저장
+    if recording and out is not None:
+        out.write(frame)
+
+    # 프레임이 일정한 간격으로 표시되도록 FPS 조정
+    elapsed_time = time.time() - start_time
+    if elapsed_time < frame_delay:
+        time.sleep(frame_delay - elapsed_time)
+
+# 종료 처리
+cap.release()
+if out is not None:
+    out.release()
+cv.destroyAllWindows()
