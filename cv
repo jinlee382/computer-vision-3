@@ -1,0 +1,242 @@
+# 회전 행렬과 병진 이동을 통한 3차원 점 구하기
+import numpy as np
+
+p1 = [3, 29, 82] 
+p2 = [10, 18, 84] 
+R = [[0.707107, 0, 0.707107], 
+     [0, 1, 0], 
+     [-0.707107, 0, 0.707107]] 
+t = [10, 27, 14]
+
+R = np.array(R)
+ 
+q1 = R @ p1 + t 
+q2 = R @ p2 + t
+
+# 카메라 행렬과 렌즈왜곡 계수 distort를 갖는 모델을 이용하여 투영한 2차원 점 구하기
+import numpy as np 
+import cv2 as cv
+
+p = [5, 1.2, 16] 
+K = [[1000, 0, 320], 
+     [0, 1000, 240], 
+     [0, 0, 1.0]] 
+distort = [-0.3, -0.1, 0, 0, 0]
+
+p = np.array(p) 
+K = np.array(K) 
+distort = np.array(distort)
+ 
+p_proj, _ = cv.projectPoints(p, np.zeros(3), np.zeros(3), K, distort)
+
+# 체스보드의 교차점이 주어진 상황에서 캘리브레이션을 통해 카메라 초점거리 구하기
+import numpy as np 
+import cv2 as cv
+ 
+pts1 = np.array(pts1).astype(np.float32) 
+pts2 = np.array(pts2).astype(np.float32) 
+pts3 = np.array(pts3).astype(np.float32)
+ 
+cell_size = 0.05 
+chess_pts = [(col, row, 0) for col in range(4) for row in range(3)] 
+chess_pts = cell_size * np.array(chess_pts).astype(np.float32)
+ 
+img_size = (1200, 800) 
+distort = np.zeros(5) 
+calib_options = cv.CALIB_FIX_PRINCIPAL_POINT + cv.CALIB_FIX_ASPECT_RATIO + cv.CALIB_FIX_K1 + cv.CALIB_FIX_K2 + cv.CALIB_FIX_K3 + cv.CALIB_ZERO_TANGENT_DIST
+ 
+rms, K, distort, rvecs, tvecs = cv.calibrateCamera([chess_pts] * 3, [pts1, pts2, pts3], img_size, None, distort, flags=calib_options) 
+
+f = K[0,0]
+
+# Fundamental matrix F있을때, 첫 번째 영상에서의 점 p에 대응하는 두번때 영상의 epipolarline을 구하기
+import numpy as np
+ 
+F = np.array(F) 
+p = np.array(p + [1]) # To homogeneous coordinate
+ 
+l = F @ p 
+l = l / np.linalg.norm(l[0:2])
+
+# 4쌍의 2D point가 주어졌을 때, transformation error를 최소화하는 2D scaling and translation의 파라미터 구하기
+ import numpy as np
+ 
+A, b = [], [] 
+for ((px, py), (qx, qy)) in zip(pts1, pts2): 
+  A.append([px, 1, 0]) 
+  A.append([py, 0, 1]) 
+  b.append(qx) 
+  b.append(qy) 
+x = np.linalg.pinv(A) @ b # x = [s, tx, ty] 
+
+s, tx, ty = x
+
+# projectPoints를 구현
+
+def projectPoints(objectPoints, rvec, tvec, cameraMatrix, distCoeffs=None):
+  imagePoints, _ = cv.fisheye.projectPoints(objectPoints.reshape(-1, 1, 3),
+    rvec.astype(np.float64), tvec.astype(np.float64),
+    cameraMatrix.astype(np.float64), np.zeros(4))
+  return imagePoints.reshape(-1, 2)
+
+# calibration 함수를 구현
+
+def calibrateCameraCV(objectPoints, imagePoints, imageSize):
+  objectPoints = [Xs.reshape(-1, 1, 3) for Xs in objectPoints]
+  imagePoints = [xs.reshape(-1, 1, 2) for xs in imagePoints]
+  return cv.fisheye.calibrate(objectPoints, imagePoints, imageSize, None, np.zeros(4),
+
+    flags=cv.fisheye.CALIB_RECOMPUTE_EXTRINSIC|cv.fisheye.CALIB_FIX_PRINCIPAL_POINT|cv.fisheye.CALIB_FIX_SKEW|
+      cv.fisheye.CALIB_FIX_K1|cv.fisheye.CALIB_FIX_K2|cv.fisheye.CALIB_FIX_K3|cv.fisheye.CALIB_FIX_K4)
+
+# 삼각법을 통해서 계산하는 rexonstructTwoview()함수를 구현
+
+def reconstructTwoView(imagePoints1, imagePoints2, cameraMatrix, distCoeffs):
+  _, E, R, t, _ = cv.recoverPose(imagePoints1, imagePoints2, cameraMatrix, distCoeffs, cameraMatrix, distCoeffs)
+  undistortPoints1 = cv.undistortPoints(imagePoints1, cameraMatrix, distCoeffs)
+  undistortPoints2 = cv.undistortPoints(imagePoints2, cameraMatrix, distCoeffs)
+  P1 = np.hstack((cameraMatrix, np.zeros((3, 1))))
+  P2 = cameraMatrix @ np.hstack((R, t))
+  Xs = cv.triangulatePoints(P1, P2, undistortPoints1, undistortPoints2)
+  Xs = Xs[:3,:] / Xs[-1,:]
+  return Xs.T # 3xN to Nx3
+
+# 이미지에서 edge검출할때, 에지의 픽셀 개수를 구해라
+
+import numpy as np
+ import cv2 as cv
+ 
+# Define Sobel kernels and edge threshold
+ kernel_dx = np.array([[-1, 0, 1],
+  [-2, 0, 2],
+  [-1, 0, 1]])
+ kernel_dy = np.array([[-1, -2, -1],
+  [0, 0, 0],
+  [1, 2, 1]])
+ edge_threshold = 80
+ 
+# Load an image
+ image = cv.imread('dome_raw.png', cv.IMREAD_GRAYSCALE)
+ 
+# Find its edge pixels
+ dx = cv.filter2D(image, cv.CV_32F, kernel_dx)
+ dy = cv.filter2D(image, cv.CV_32F, kernel_dy)
+ magnitude = np.sqrt(dx*dx + dy*dy)
+ edge = magnitude > edge_threshold
+ 
+# Print and show the result
+ n_edge = np.count_nonzero(edge) # Or 'sum(sum(edge))'
+ print(n_edge) # 103123
+ cv.imshow('Original', image)
+ cv.imshow('Edge Detection', edge.astype(np.uint8) * 255)
+ cv.waitKey(0)
+
+# 주어진 이미지 파일 dome_mark.png은 타켓 물체들이 빨간색으로 표시되어있다. 해당 타켓 물체들의 위치를 3차 다항식(y = a*x**3 + b*x**2 + c*x + d)으로 표현(fitting)할 때, 3차 다항식의 계수 [a, b, c, d]를 구해라
+
+import numpy as np
+ import cv2 as cv
+ 
+# Load an image
+ image = cv.imread('dome_mark.png')
+ height, width, _ = image.shape
+ 
+# Find its red pixels
+ red_mask = np.logical_and(image[:,:,0] == 0, image[:,:,1] == 0)
+ red_mask = np.logical_and(red_mask, image[:,:,2] == 255)
+ red_idx = np.argwhere(red_mask)
+ red_xs, red_ys = red_idx[:,1], red_idx[:,0]
+ 
+# Find the cubic polynomial curve from the red pixels
+ cubic = np.polyfit(red_xs, red_ys, 3)
+ print(cubic) # [3.11183888e-09, 7.74654330e-05, -1.98182791e-01, 3.30300855e+02]
+ 
+# Drawing the curve on the original image
+ x = np.linspace(0, width, 100)
+ y = np.polyval(cubic, x)
+ curve = np.column_stack((x, y)).astype(np.int32)
+ cv.polylines(image, [curve], isClosed=False, color=(255, 0, 0), thickness=2)
+ cv.imshow('Curve Detection', image)
+ cv.imshow('Red Mask', red_mask.astype(np.uint8) * 255)
+ cv.waitKey(0)
+
+# 잘못된 물체 검출 결과를 무시하고, 3차 다항식 근사를 수행하는 방법을 이용하여 계수 [a, b, c, d]를 구하
+
+import numpy as np
+import cv2 as cv
+import random
+
+# Reference: https://github.com/mint-lab/3dv_tutorial/blob/master/examples/line_fitting_ransac.py
+def generate_cubic(pts):
+    return np.polyfit(pts[:,0], pts[:,1], 3)
+
+def evaluate_cubic(cubic, p):
+    x, y = p
+    y_cubic = np.polyval(cubic, x)
+    return np.fabs(y - y_cubic)
+
+def fit_cubic_ransac(data, n_sample, ransac_trial, ransac_threshold):
+    best_score = -1
+    best_model = None
+    for _ in range(ransac_trial):
+        # Step 1: Hypothesis generation
+        sample = random.choices(data, k=n_sample)
+        model = generate_cubic(np.row_stack(sample))
+
+        # Step 2: Hypothesis evaluation
+        score = 0
+        for p in data:
+            error = evaluate_cubic(model, p)
+            if error < ransac_threshold:
+                score += 1
+        if score > best_score:
+            best_score = score
+            best_model = model
+
+    return best_model, best_score
+
+if __name__ == '__main__':
+    # Load an image
+    image = cv.imread('dome_outlier.png')
+    height, width, _ = image.shape
+
+    # Find its red pixels
+    red_mask = np.logical_and(image[:,:,0] == 0, image[:,:,1] == 0)
+    red_mask = np.logical_and(red_mask, image[:,:,2] == 255)
+    red_idx = np.argwhere(red_mask)
+    red_pts = np.column_stack((red_idx[:,1], red_idx[:,0]))
+
+    # Find the cubic polynomial curve from the red pixels
+    cubic, score = fit_cubic_ransac(red_pts, 4, 1000, 5)
+    print(cubic, score) # Something similar to [3e-09, 8e-05, -0.2, 330]
+
+    # Drawing the curve on the original image
+    x = np.linspace(0, width, 100)
+    y = np.polyval(cubic, x)
+    curve = np.column_stack((x, y)).astype(np.int32)
+    cv.polylines(image, [curve], isClosed=False, color=(255, 0, 0), thickness=2)
+    cv.imshow('Curve Detection', image)
+    cv.imshow('Red Mask', red_mask.astype(np.uint8) * 255)
+    cv.waitKey(0)
+
+# 구구단 테이블 만들기
+
+mul_table = [[(a, b, a * b) for a in range(2, 10)] for b in range(1, 10)]
+
+# 주어진 `ascii_art.txt` 파일에서 사용된 각 ASCII 문자의 개수를 출력
+
+with open('ascii_art.txt', 'r') as f:
+  text = f.read()
+  unique_char = set(text) - {' ', '\n'}
+  print(len(unique_char)) # My result: 37
+
+# 주어진 `ascii_art.txt` 파일에서 사용된 각 ASCII 문자의 빈도(frequency)가 가장 많은 3개의 문자와 해당 빈도를 출력
+ 
+with open('ascii_art.txt', 'r') as f:
+  text = f.read()
+  unique_char = set(text) - {' ', '\n'}
+  freqency = {char: text.count(char) for char in unique_char}
+  sorted_freqency = sorted(freqency.items(), key=lambda x: x[1], reverse=True)
+  for item in sorted_freqency[:3]:
+    print(item)
+
+# 
